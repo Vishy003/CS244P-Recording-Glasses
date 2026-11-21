@@ -13,8 +13,9 @@ motion sensor, and a local MQTT/InfluxDB/Grafana server.
 - Server services and authenticated TLS ingestion were tested using explicitly
   labeled synthetic messages, removed after verification.
 - Real sensor delivery over Wi-Fi to Grafana is **not yet verified**.
-- Button-controlled capture, video storage, remote commands, and reliability
-  testing remain in progress. Firmware variants below are separate bench tests.
+- Button-controlled RAM-only capture is implemented and pending hardware testing.
+  Video storage, remote commands, and reliability testing remain in progress.
+  Firmware variants below are separate bench tests.
 
 ## Safety and consent
 
@@ -44,6 +45,7 @@ saved video, scheduled recording, or remote recording.
 | IMU VCC / GND | 3V3 / GND |
 | IMU SDA / SCL | D4 (GPIO5) / D5 (GPIO6) |
 | External red LED | D1 (GPIO2) through 330 ohm resistor to LED anode; cathode to GND |
+| Button | D2 (GPIO3) to GND, internal pull-up; based on original project layout |
 | Camera | Sense expansion board's camera connector |
 
 Disconnect power before changing wiring. Do not use D8/D9/D10 for the IMU if
@@ -58,6 +60,7 @@ uploading. Select **one** environment explicitly:
 pio run -d firmware-xiao -e xiao_esp32s3
 pio run -d firmware-xiao -e xiao_led_test
 pio run -d firmware-xiao -e xiao_camera_test
+pio run -d firmware-xiao -e xiao_button_capture
 ```
 
 Add `-t upload --upload-port <your-port>` to upload an environment, then:
@@ -104,15 +107,31 @@ telemetry topic: `grp18/devices/group18-glasses-01/telemetry`.
 The real-IMU dashboard filters `source=xiao_imu`. The bench firmware uses QoS 0
 and does not implement persistent buffering or delivery acknowledgements.
 
-## Security review notes
+## Button-controlled camera capture (storage pending)
 
-Credentials, Wi-Fi settings, private keys, original flash backups, recordings,
-and generated firmware headers stay outside Git. Setup generates credentials
-and a local CA. MQTT uses passwords, TLS, and per-user topic ACLs. Telegraf has
-an Influx write token; Grafana has a separate read token. Full command validation,
-signed updates, flash protection, saved-media retention/deletion, and end-to-end
-reliability have not been implemented or verified. Review source code rather
-than treating planned protections as completed features.
+Environment: `xiao_button_capture`. Use only in the approved private room facing
+a fixed desk or wall with no non-consenting people in frame.
 
-Group 18 reviews Group 19; Group 17 reviews this repository. Reviewers need
-repository access and should identify the commit they reviewed.
+1. On boot the camera and D1 LED are off; a button held at boot cannot start it.
+2. Release the D2-to-GND button, then press once to start capture. The red LED
+   turns on before camera initialization. JPEG frames are acquired into RAM and
+   discarded; this is not a saved video recording.
+3. Press again to stop. The camera shuts down before the LED goes off.
+4. Serial output reports state, button level, frame count, and failures. No image
+   bytes are printed. The microphone is never initialized, and SD/Wi-Fi are unused.
+
+The button is debounced for 40 ms; capture requests are spaced by at least
+100 ms (not a guaranteed frame rate). Frame acquisition failure stops capture.
+If camera startup/shutdown fails, the LED remains on and restart is locked out;
+disconnect power and investigate. Software commands cannot verify physical LED
+illumination. Hardware button/capture/stop behavior has not yet been tested.
+
+To build/upload:
+
+```sh
+pio run -d firmware-xiao -e xiao_button_capture -t upload --upload-port <your-port>
+pio device monitor --port <your-port> --baud 115200
+```
+
+Saving JPEG/MJPEG/video and closing the recording file are future work. When
+storage is added, the LED must also remain on until the recording file closes.
