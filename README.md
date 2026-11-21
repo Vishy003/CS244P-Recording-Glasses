@@ -133,3 +133,28 @@ pio device monitor --port <your-port> --baud 115200
 ```
 
 Each acquired frame is released after counting; this variant captures into RAM.
+
+## USB clock synchronization for local TLS testing
+
+We added an optional USB clock command to the IMU firmware. This lets our laptop
+provide the current UTC time when testing MQTT on a hotspot. Certificate
+verification stays enabled. The command is accepted over physical USB serial;
+we do not accept clock commands over Wi-Fi or MQTT.
+
+With the IMU firmware installed and other serial monitors closed:
+
+```sh
+python3 -m pip install pyserial
+python3 scripts/show_live_imu.py --sync-clock
+```
+
+The script sends the laptop's current UTC epoch and displays device diagnostics.
+Serial messages report Wi-Fi association, certificate-validated MQTT connection,
+and real sensor publications. To check receipt, open the Grafana dashboard and
+look for the corresponding readings. The firmware retries Wi-Fi connections,
+scans the D4/D5 bus once when the sensor is absent, and tests the reversed D4/D5
+assignment during startup. If neither orientation identifies the IMU, it returns
+to SDA D4 / SCL D5. Sensor data is published only after a successful hardware read.
+
+The LAN certificate includes both an IP SAN for desktop clients and a numeric
+DNS SAN for the Arduino core's mbedTLS hostname verifier.
