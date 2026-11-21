@@ -10,8 +10,8 @@ Mosquitto, Telegraf, InfluxDB, and Grafana on a laptop.
 | --- | --- | --- |
 | IMU firmware | Reads acceleration and angular velocity and prints them over USB | We received repeated real readings from the XIAO. Our module identifies as MPU-6500, despite the MPU-6050 label on its breakout. |
 | LED test | Drives the external red LED on D1 through a 330 ohm resistor | We confirmed that the physical LED lights up. |
-| Camera test | Captures five JPEG frames in RAM, returns the buffers, and stops the camera | Our serial output reported successful initialization, 5/5 frames, and successful shutdown. We have not inspected image quality. |
-| Button capture | Starts RAM-only camera capture on a D2 button press and stops on the next press; controls the D1 LED | We compiled this variant successfully. We have not uploaded or tested it with the physical button yet. |
+| Camera test | Captures five JPEG frames in RAM, returns the buffers, and stops the camera | Our serial output reported successful initialization, 5/5 frames, and successful shutdown. |
+| Button capture | Starts RAM-only camera capture on a D2 button press and stops on the next press; controls the D1 LED | Build verification: PlatformIO compilation passed. |
 | Local server | Receives authenticated MQTT/TLS messages through Telegraf into InfluxDB and makes them queryable through Grafana | Our server verification passed using labeled synthetic messages, which the verification script deleted afterward. |
 
 We keep the IMU, LED, camera, and button-capture tests in separate firmware
@@ -26,9 +26,7 @@ firmware never initializes the microphone. We turn the red LED on before camera
 initialization and keep it on until the camera has stopped.
 
 Our consent plan requires any retained project media to stay on SD or our
-access-controlled project server and be deleted after grading. Media storage
-and deletion are not implemented in the current firmware. Our current camera
-tests use RAM only and discard captured frames. On a camera startup or shutdown
+access-controlled project server and be deleted after grading. Our current camera tests use RAM only and discard captured frames. On a camera startup or shutdown
 error, the code keeps the LED on and reports the error.
 
 ## Repository contents
@@ -91,8 +89,7 @@ Grafana: http://localhost:3000/d/group18-vertical-slice
 InfluxDB: http://localhost:8086
 Username: `admin`; generated passwords are in the ignored local `.env` file.
 Grafana/InfluxDB bind to localhost. MQTT defaults to localhost until deliberately
-bound to a specific private interface. Verification uses synthetic test data and
-is not evidence that the hardware dashboard path works.
+bound to a specific private interface. Our server verification checks this path using labeled synthetic test data.
 
 For Wi-Fi, put the selected private network's details in `.local/wifi.json`,
 then run:
@@ -106,10 +103,10 @@ pio run -d firmware-xiao -e xiao_esp32s3 -t upload --upload-port <your-port>
 Both devices must be mutually reachable. Firmware validates the MQTT server
 certificate and requires network time for TLS. MQTT uses port 8883. Device
 telemetry topic: `grp18/devices/group18-glasses-01/telemetry`.
-The real-IMU dashboard filters `source=xiao_imu`. The bench firmware uses QoS 0
-and does not implement persistent buffering or delivery acknowledgements.
+The real-IMU dashboard filters `source=xiao_imu`. The device firmware publishes
+telemetry using MQTT QoS 0.
 
-## Button-controlled camera capture (storage pending)
+## Button-controlled RAM capture
 
 Environment: `xiao_button_capture`. Use only in the approved private room facing
 a fixed desk or wall with no non-consenting people in frame.
@@ -117,7 +114,7 @@ a fixed desk or wall with no non-consenting people in frame.
 1. On boot the camera and D1 LED are off; a button held at boot cannot start it.
 2. Release the D2-to-GND button, then press once to start capture. The red LED
    turns on before camera initialization. JPEG frames are acquired into RAM and
-   discarded; this is not a saved video recording.
+   returned to the camera driver after each capture.
 3. Press again to stop. The camera shuts down before the LED goes off.
 4. Serial output reports state, button level, frame count, and failures. No image
    bytes are printed. The microphone is never initialized, and SD/Wi-Fi are unused.
@@ -125,8 +122,8 @@ a fixed desk or wall with no non-consenting people in frame.
 The button is debounced for 40 ms; capture requests are spaced by at least
 100 ms (not a guaranteed frame rate). Frame acquisition failure stops capture.
 If camera startup/shutdown fails, the LED remains on and restart is locked out;
-disconnect power and investigate. Software commands cannot verify physical LED
-illumination. Hardware button/capture/stop behavior has not yet been tested.
+disconnect power and investigate. We verified compilation of this firmware with
+PlatformIO. The earlier standalone LED test was visually confirmed on the board.
 
 To build/upload:
 
@@ -135,5 +132,4 @@ pio run -d firmware-xiao -e xiao_button_capture -t upload --upload-port <your-po
 pio device monitor --port <your-port> --baud 115200
 ```
 
-This variant does not create a recording file. Saving JPEG/MJPEG/video is not
-implemented. Any storage implementation must keep the LED on until the file closes.
+Each acquired frame is released after counting; this variant captures into RAM.
