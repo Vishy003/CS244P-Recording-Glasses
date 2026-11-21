@@ -39,6 +39,26 @@ def api(path, env, payload=None, method=None):
         return json.loads(body) if body else {}
 
 
+def ensure_ca_key_usage(ca, broker):
+    """Repair older local CA certificates for strict TLS clients, keeping the key."""
+    certificate = broker / 'ca.crt'
+    details = subprocess.check_output(['openssl', 'x509', '-in', str(certificate),
+                                       '-noout', '-text'], text=True)
+    if 'Certificate Sign' in details and 'CRL Sign' in details:
+        return
+    serial = subprocess.check_output(['openssl', 'x509', '-in', str(certificate),
+                                      '-noout', '-serial'], text=True).strip().split('=', 1)[1]
+    backup = ca / 'ca-before-key-usage.crt'
+    if not backup.exists():
+        backup.write_bytes(certificate.read_bytes())
+    subprocess.run(['openssl', 'req', '-x509', '-new', '-key', str(ca/'ca.key'),
+                    '-out', str(certificate), '-days', '365', '-set_serial', '0x'+serial,
+                    '-subj', '/CN=Group18 Local Development CA',
+                    '-addext', 'basicConstraints=critical,CA:TRUE',
+                    '-addext', 'keyUsage=critical,keyCertSign,cRLSign'],
+                   check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def main():
     env = load_env()
     for key in ['INFLUX_ADMIN_PASSWORD', 'INFLUX_ADMIN_TOKEN', 'GRAFANA_ADMIN_PASSWORD',
@@ -60,7 +80,8 @@ def main():
                            stderr=subprocess.DEVNULL)
         openssl('req', '-x509', '-newkey', 'rsa:3072', '-nodes', '-days', '365',
                 '-keyout', str(ca/'ca.key'), '-out', str(broker/'ca.crt'),
-                '-subj', '/CN=Group18 Local Development CA', '-addext', 'basicConstraints=critical,CA:TRUE')
+                '-subj', '/CN=Group18 Local Development CA', '-addext', 'basicConstraints=critical,CA:TRUE',
+                '-addext', 'keyUsage=critical,keyCertSign,cRLSign')
         openssl('req', '-newkey', 'rsa:3072', '-nodes', '-keyout', str(broker/'server.key'),
                 '-out', str(ca/'server.csr'), '-subj', '/CN=mosquitto')
         (ca/'server.ext').write_text('subjectAltName=DNS:localhost,DNS:mosquitto,IP:127.0.0.1\n'
@@ -72,6 +93,7 @@ def main():
         # Docker's non-root Mosquitto user must read its mounted key. The parent
         # .local directory is mode 0700 on the host; only the broker gets this mount.
         (broker/'server.key').chmod(0o644)
+    ensure_ca_key_usage(ca, broker)
     (broker/'mosquitto.conf').write_text('''persistence true
 persistence_location /mosquitto/data/
 log_dest stdout
