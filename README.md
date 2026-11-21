@@ -1,6 +1,6 @@
 # Recording Glasses — CS244P Group 18
 
-We are Group 18. Our recording-glasses prototype uses a Seeed XIAO ESP32S3
+Our recording-glasses prototype uses a Seeed XIAO ESP32S3
 Sense, an external IMU, a push button, and a red LED. Our local server runs
 Mosquitto, Telegraf, InfluxDB, and Grafana on a laptop.
 
