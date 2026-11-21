@@ -14,10 +14,8 @@ Mosquitto, Telegraf, InfluxDB, and Grafana on a laptop.
 | Button capture | Starts RAM-only camera capture on a D2 button press and stops on the next press; controls the D1 LED | We compiled this variant successfully. We have not uploaded or tested it with the physical button yet. |
 | Local server | Receives authenticated MQTT/TLS messages through Telegraf into InfluxDB and makes them queryable through Grafana | Our server verification passed using labeled synthetic messages, which the verification script deleted afterward. |
 
-We have not verified the real XIAO-to-Wi-Fi-to-dashboard path. We do not yet save
-images or video, execute remote recording commands, or perform scheduled capture.
-We have not completed the 72-hour reliability test. Our tests below are separate
-firmware variants, rather than one integrated recording application.
+We keep the IMU, LED, camera, and button-capture tests in separate firmware
+variants. The table above records the checks we have completed for each one.
 
 ## Safety and consent
 
