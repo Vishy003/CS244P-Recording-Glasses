@@ -1,33 +1,37 @@
 # Recording Glasses — CS244P Group 18
 
-Hands-free camera prototype using a Seeed XIAO ESP32S3 Sense, an external
-motion sensor, and a local MQTT/InfluxDB/Grafana server.
+We are Group 18. Our recording-glasses prototype uses a Seeed XIAO ESP32S3
+Sense, an external IMU, a push button, and a red LED. Our local server runs
+Mosquitto, Telegraf, InfluxDB, and Grafana on a laptop.
 
-## Current implementation
+## What we have built and tested
 
-- Verified on hardware: real IMU acceleration/gyroscope readings over USB.
-  The tested module identifies as MPU-6500 although its breakout is labeled MPU-6050.
-- Verified on hardware: external LED on D1 with a 330 ohm series resistor.
-- Verified on hardware: camera initialization, five RAM-only JPEG frames,
-  and camera shutdown. Images were discarded; no saved video exists yet.
-- Server services and authenticated TLS ingestion were tested using explicitly
-  labeled synthetic messages, removed after verification.
-- Real sensor delivery over Wi-Fi to Grafana is **not yet verified**.
-- Button-controlled RAM-only capture is implemented and pending hardware testing.
-  Video storage, remote commands, and reliability testing remain in progress.
-  Firmware variants below are separate bench tests.
+| Component | What our code does | What we have checked |
+| --- | --- | --- |
+| IMU firmware | Reads acceleration and angular velocity and prints them over USB | We received repeated real readings from the XIAO. Our module identifies as MPU-6500, despite the MPU-6050 label on its breakout. |
+| LED test | Drives the external red LED on D1 through a 330 ohm resistor | We confirmed that the physical LED lights up. |
+| Camera test | Captures five JPEG frames in RAM, returns the buffers, and stops the camera | Our serial output reported successful initialization, 5/5 frames, and successful shutdown. We have not inspected image quality. |
+| Button capture | Starts RAM-only camera capture on a D2 button press and stops on the next press; controls the D1 LED | We compiled this variant successfully. We have not uploaded or tested it with the physical button yet. |
+| Local server | Receives authenticated MQTT/TLS messages through Telegraf into InfluxDB and makes them queryable through Grafana | Our server verification passed using labeled synthetic messages, which the verification script deleted afterward. |
+
+We have not verified the real XIAO-to-Wi-Fi-to-dashboard path. We do not yet save
+images or video, execute remote recording commands, or perform scheduled capture.
+We have not completed the 72-hour reliability test. Our tests below are separate
+firmware variants, rather than one integrated recording application.
 
 ## Safety and consent
 
-Record only consenting team members and stop if anyone else enters the frame.
-Use a team member's private room facing a fixed desk or wall; no classroom,
-campus, or public recording. Keep the microphone uninitialized. The external red
-LED must turn on before camera capture starts and remain on until capture stops
-and any recording file closes. Store project media only on SD/access-controlled
-project storage and delete it after final grading. The current camera bench test
-uses RAM only, initializes no microphone, enables the LED before camera startup,
-and disables it only after successful shutdown. These tests do not implement
-saved video, scheduled recording, or remote recording.
+We test only in a team member's private room, facing a fixed desk or wall. We
+record only consenting team members and stop if anyone else enters the frame.
+We do not record in classrooms, on campus, or in public spaces. Our camera
+firmware never initializes the microphone. We turn the red LED on before camera
+initialization and keep it on until the camera has stopped.
+
+Our consent plan requires any retained project media to stay on SD or our
+access-controlled project server and be deleted after grading. Media storage
+and deletion are not implemented in the current firmware. Our current camera
+tests use RAM only and discard captured frames. On a camera startup or shutdown
+error, the code keeps the LED on and reports the error.
 
 ## Repository contents
 
@@ -133,5 +137,5 @@ pio run -d firmware-xiao -e xiao_button_capture -t upload --upload-port <your-po
 pio device monitor --port <your-port> --baud 115200
 ```
 
-Saving JPEG/MJPEG/video and closing the recording file are future work. When
-storage is added, the LED must also remain on until the recording file closes.
+This variant does not create a recording file. Saving JPEG/MJPEG/video is not
+implemented. Any storage implementation must keep the LED on until the file closes.
