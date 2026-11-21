@@ -14,7 +14,9 @@ if not parsed.is_private or parsed.is_loopback or parsed.is_unspecified or parse
 os.chdir(ROOT)
 ca = ROOT/'.local/ca'
 broker = ROOT/'.local/mosquitto'
-(ca/'server.ext').write_text('subjectAltName=DNS:localhost,DNS:mosquitto,IP:127.0.0.1,IP:'+address+'\n'
+# Arduino's bundled mbedTLS 2.28 checks DNS SANs, not binary IP SANs.
+# Keep the normal IP SAN as well, for strict desktop TLS clients.
+(ca/'server.ext').write_text('subjectAltName=DNS:localhost,DNS:mosquitto,DNS:'+address+',IP:127.0.0.1,IP:'+address+'\n'
                             'extendedKeyUsage=serverAuth\nbasicConstraints=CA:FALSE\n')
 subprocess.run(['openssl','x509','-req','-in',str(ca/'server.csr'),'-CA',str(broker/'ca.crt'),
     '-CAkey',str(ca/'ca.key'),'-CAcreateserial','-out',str(broker/'server.crt'),'-days','365',
