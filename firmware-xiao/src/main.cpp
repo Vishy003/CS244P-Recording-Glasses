@@ -5,6 +5,7 @@
 #include <PubSubClient.h>
 #include <esp_system.h>
 #include <time.h>
+#include <sys/time.h>
 #if __has_include("device_secrets.h")
 #include "device_secrets.h"
 #else
@@ -13,8 +14,8 @@
 
 // Corrected user-confirmed wiring: VCC->3V3, GND->GND, SDA->D4, SCL->D5.
 // On XIAO ESP32S3: D4=GPIO5; D5=GPIO6.
-constexpr int SDA_PIN = 5;
-constexpr int SCL_PIN = 6;
+int SDA_PIN = 5;
+int SCL_PIN = 6;
 constexpr uint32_t SAMPLE_INTERVAL_MS = 1000;
 uint8_t imuAddress = 0;
 uint8_t imuIdentity = 0;
@@ -26,10 +27,43 @@ uint32_t lastStatus = 0;
 uint32_t retryAt = 0;
 uint32_t backoffMs = 2000;
 uint32_t lastImuProbe = 0;
+uint32_t lastWifiRetry = 0;
 bool networkEnabled = false;
 bool wifiReported = false;
 WiFiClientSecure tls;
 PubSubClient mqtt(tls);
+
+// Bench-only physical USB clock provisioning; never accepted over MQTT/Wi-Fi.
+// Use the trusted laptop's current UTC epoch, not a fixed build timestamp.
+void serviceUsbClock() {
+  static char command[40];
+  static size_t used = 0;
+  static bool overflow = false;
+  while (Serial.available()) {
+    const char ch = Serial.read();
+    if (ch == '\r') continue;
+    if (ch == '\n') {
+      command[used] = '\0';
+      if (!overflow && strncmp(command, "TIME ", 5) == 0) {
+        char* end = nullptr;
+        const unsigned long long epoch = strtoull(command + 5, &end, 10);
+        if (end != command + 5 && *end == '\0' && epoch >= 1700000000ULL && epoch < 4102444800ULL) {
+          // Never change the clock under an active TLS connection.
+          mqtt.disconnect();
+          tls.stop();
+          struct timeval utc = {static_cast<time_t>(epoch), 0};
+          if (settimeofday(&utc, nullptr) == 0) {
+            retryAt = 0;
+            Serial.println("Clock synchronized from trusted USB laptop; TLS validation remains enabled.");
+          }
+        } else Serial.println("Rejected invalid USB time command.");
+      }
+      used = 0;
+      overflow = false;
+    } else if (used < sizeof(command) - 1) command[used++] = ch;
+    else overflow = true;
+  }
+}
 
 bool readRegisters(uint8_t addr, uint8_t reg, uint8_t* data, size_t length) {
   Wire.beginTransmission(addr);
@@ -70,10 +104,26 @@ bool initializeImu() {
     imuAddress = addr;
     imuIdentity = identity;
     sensorModel = model;
-    Serial.printf("Verified %s; SDA=GPIO%d (D4), SCL=GPIO%d (D5).\n", model, SDA_PIN, SCL_PIN);
+    Serial.printf("Verified %s; SDA=GPIO%d, SCL=GPIO%d.\n", model, SDA_PIN, SCL_PIN);
     return true;
   }
-  Serial.println("No supported IMU found. Check 3V3/GND, SDA->D4, SCL->D5; no readings fabricated.");
+  Serial.printf("No supported IMU: SDA=GPIO%d SCL=GPIO%d. No readings fabricated.\n", SDA_PIN, SCL_PIN);
+  static bool scanned = false;
+  static unsigned respondingAddresses = 0;
+  if (!scanned) {
+    scanned = true;
+    Serial.printf("I2C diagnostics: SDA=%d SCL=%d (idle bus should be HIGH).\n",
+                  digitalRead(SDA_PIN), digitalRead(SCL_PIN));
+    for (uint8_t address = 8; address < 120; ++address) {
+      Wire.beginTransmission(address);
+      if (Wire.endTransmission() == 0) {
+        Serial.printf("I2C ACK at 0x%02X\n", address);
+        ++respondingAddresses;
+      }
+    }
+  }
+  Serial.printf("Initial I2C scan: %u responding addresses; current SDA=%d SCL=%d.\n",
+                respondingAddresses, digitalRead(SDA_PIN), digitalRead(SCL_PIN));
   return false;
 }
 
@@ -93,6 +143,10 @@ void serviceNetwork() {
   if (!networkEnabled) return;
   if (WiFi.status() != WL_CONNECTED) {
     wifiReported = false;
+    if (millis() - lastWifiRetry >= 15000) {
+      lastWifiRetry = millis();
+      WiFi.reconnect();
+    }
     if (millis() - lastStatus > 5000) {
       Serial.printf("Wi-Fi pending; status=%d. Local sensor sampling continues.\n", WiFi.status());
       lastStatus = millis();
@@ -135,7 +189,24 @@ void setup() {
   Wire.begin(SDA_PIN, SCL_PIN);
   Wire.setClock(100000);
   Wire.setTimeOut(50);
-  initializeImu();
+  if (!initializeImu()) {
+    Serial.println("Testing reversed D4/D5 assignment without moving wires.");
+    Wire.end();
+    SDA_PIN = 6;
+    SCL_PIN = 5;
+    Wire.begin(SDA_PIN, SCL_PIN);
+    Wire.setClock(100000);
+    Wire.setTimeOut(50);
+    if (!initializeImu()) {
+      Wire.end();
+      SDA_PIN = 5;
+      SCL_PIN = 6;
+      Wire.begin(SDA_PIN, SCL_PIN);
+      Wire.setClock(100000);
+      Wire.setTimeOut(50);
+      Serial.println("No IMU in either orientation. Restored SDA D4 / SCL D5 for retries.");
+    }
+  }
   snprintf(bootId, sizeof(bootId), "xiao-%08lx-%08lx",
       static_cast<unsigned long>(esp_random()), static_cast<unsigned long>(esp_random()));
   networkEnabled = WIFI_SSID[0] && WIFI_PASSWORD[0] && MQTT_HOST[0] && MQTT_PASSWORD[0] && MQTT_CA[0];
@@ -162,6 +233,7 @@ void setup() {
 
 void loop() {
   delay(10);
+  serviceUsbClock();
   serviceNetwork();
   if (!imuAddress && millis() - lastImuProbe > 5000) {
     lastImuProbe = millis();
