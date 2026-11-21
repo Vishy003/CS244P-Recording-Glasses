@@ -1,0 +1,19 @@
+.env
+.local/
+__pycache__/
+*.pyc
+firmware/.pio/
+firmware/include/device_secrets.h
+firmware-xiao/.pio/
+firmware-xiao/include/device_secrets.h
+
+# Machine-specific verification results and captured media
+*-status.json
+verification.json
+.DS_Store
+*.jpg
+*.jpeg
+*.png
+*.mp4
+*.avi
+*.mjpeg

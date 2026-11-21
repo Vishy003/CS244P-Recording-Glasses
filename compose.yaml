@@ -1,0 +1,85 @@
+name: group18-glasses
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    restart: unless-stopped
+    ports:
+      - "${MQTT_BIND_ADDRESS:-127.0.0.1}:8883:8883"
+    volumes:
+      - ./.local/mosquitto:/mosquitto/config:ro
+      - mqtt-data:/mosquitto/data
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /mosquitto/config/passwords && pidof mosquitto"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging:
+      options: {max-size: "10m", max-file: "3"}
+
+  influxdb:
+    image: influxdb:2.7
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_ADMIN_PASSWORD:?Run scripts/setup.py first}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_ADMIN_TOKEN:?Run scripts/setup.py first}
+      DOCKER_INFLUXDB_INIT_ORG: group18
+      DOCKER_INFLUXDB_INIT_BUCKET: telemetry
+      DOCKER_INFLUXDB_INIT_RETENTION: 720h
+    volumes:
+      - influx-data:/var/lib/influxdb2
+      - influx-config:/etc/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+    logging:
+      options: {max-size: "10m", max-file: "3"}
+
+  telegraf:
+    image: telegraf:1.36
+    restart: unless-stopped
+    depends_on:
+      mosquitto: {condition: service_healthy}
+      influxdb: {condition: service_healthy}
+    environment:
+      MQTT_INGEST_PASSWORD: ${MQTT_INGEST_PASSWORD}
+      INFLUX_WRITE_TOKEN: ${INFLUX_WRITE_TOKEN}
+    volumes:
+      - ./config/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - ./.local/mosquitto/ca.crt:/etc/telegraf/ca.crt:ro
+    logging:
+      options: {max-size: "10m", max-file: "3"}
+
+  grafana:
+    image: grafana/grafana:12.1
+    restart: unless-stopped
+    depends_on:
+      influxdb: {condition: service_healthy}
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Run scripts/setup.py first}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      INFLUX_READ_TOKEN: ${INFLUX_READ_TOKEN}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    logging:
+      options: {max-size: "10m", max-file: "3"}
+
+volumes:
+  mqtt-data:
+  influx-data:
+  influx-config:
+  grafana-data:
