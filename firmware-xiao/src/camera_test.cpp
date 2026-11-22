@@ -1,6 +1,11 @@
 #include <Arduino.h>
 #include "esp_camera.h"
 
+#ifndef CAMERA_TEST_FRAMES
+#define CAMERA_TEST_FRAMES 5
+#endif
+static_assert(CAMERA_TEST_FRAMES >= 1 && CAMERA_TEST_FRAMES <= 60, "Use 1 to 60 bench frames.");
+
 unsigned capturedFrames = 0;
 esp_err_t initResult = ESP_FAIL;
 esp_err_t stopResult = ESP_FAIL;
@@ -13,7 +18,7 @@ void setup() {
   Serial.begin(115200);
   const uint32_t start = millis();
   while (!Serial && millis() - start < 15000) delay(10);
-  Serial.println("Camera bench test: five RAM-only frames; microphone never initialized.");
+  Serial.printf("Camera bench test: %u RAM-only frames; microphone never initialized.\n", unsigned(CAMERA_TEST_FRAMES));
   digitalWrite(D1, HIGH);
   delay(250);
   camera_config_t c = {};
@@ -42,7 +47,7 @@ void setup() {
   sensor_t* sensor = esp_camera_sensor_get();
   Serial.printf("Camera initialized; sensor PID=0x%04x. LED commanded ON.\n", sensor->id.PID);
   unsigned success = 0;
-  for (unsigned i = 1; i <= 5; ++i) {
+  for (unsigned i = 1; i <= CAMERA_TEST_FRAMES; ++i) {
     camera_fb_t* frame = esp_camera_fb_get();
     if (frame) {
       Serial.printf("Frame %u: %ux%u, %u bytes, format=%d (RAM only).\n", i,
@@ -57,12 +62,12 @@ void setup() {
   stopResult = err;
   if (err == ESP_OK) {
     digitalWrite(D1, LOW);
-    Serial.printf("Test finished: %u/5 frames; camera stopped, LED OFF. No images saved/uploaded.\n", success);
+    Serial.printf("Test finished: %u/%u frames; camera stopped, LED OFF. No images saved/uploaded.\n", success, unsigned(CAMERA_TEST_FRAMES));
   } else Serial.printf("Camera stop error 0x%x; LED stays ON. Disconnect USB.\n", err);
 }
 
 void loop() {
-  Serial.printf("Camera test result: init=0x%x, frames=%u/5, stop=0x%x; LED=%s; mic never initialized. No media saved/uploaded.\n",
-                initResult, capturedFrames, stopResult, digitalRead(D1) ? "ON" : "OFF");
+  Serial.printf("Camera test result: init=0x%x, frames=%u/%u, stop=0x%x; LED=%s; mic never initialized. No media saved/uploaded.\n",
+                initResult, capturedFrames, unsigned(CAMERA_TEST_FRAMES), stopResult, digitalRead(D1) ? "ON" : "OFF");
   delay(2000);
 }
