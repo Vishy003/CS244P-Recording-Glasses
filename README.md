@@ -10,8 +10,8 @@ Mosquitto, Telegraf, InfluxDB, and Grafana on a laptop.
 | --- | --- | --- |
 | IMU firmware | Reads acceleration and angular velocity and prints them over USB | We received repeated real readings from the XIAO. Our module identifies as MPU-6500, despite the MPU-6050 label on its breakout. |
 | LED test | Drives the external red LED on D1 through a 330 ohm resistor | We confirmed that the physical LED lights up. |
-| Camera test | Captures five JPEG frames in RAM, returns the buffers, and stops the camera | Our serial output reported successful initialization, 5/5 frames, and successful shutdown. |
-| Button capture | Starts RAM-only camera capture on a D2 button press and stops on the next press; controls the D1 LED | Build verification: PlatformIO compilation passed. |
+| Camera test | Captures a selected number of JPEG frames in RAM, returns the buffers, and stops the camera | We received 20/20 frames at 320×240 with successful initialization and shutdown. We also visually confirmed the external LED during this test. |
+| Button capture | Implements D2 button handling for starting and stopping RAM capture with the D1 LED | Build verification: PlatformIO compilation passed. |
 | Local server | Receives authenticated MQTT/TLS messages through Telegraf into InfluxDB and makes them queryable through Grafana | Our server verification passed using labeled synthetic messages, which the verification script deleted afterward. |
 
 We keep the IMU, LED, camera, and button-capture tests in separate firmware
@@ -44,8 +44,8 @@ error, the code keeps the LED on and reports the error.
 | --- | --- |
 | IMU VCC / GND | 3V3 / GND |
 | IMU SDA / SCL | D4 (GPIO5) / D5 (GPIO6) |
-| External red LED | D1 (GPIO2) through 330 ohm resistor to LED anode; cathode to GND |
-| Button | D2 (GPIO3) to GND, internal pull-up; based on original project layout |
+| External red LED | D1 (GPIO2) through 330 ohm resistor to LED anode. LED cathode connects to GND |
+| Button | Firmware uses D2 (GPIO3) with an internal pull-up and expects a switch to GND |
 | Camera | Sense expansion board's camera connector |
 
 Disconnect power before changing wiring. Do not use D8/D9/D10 for the IMU if
@@ -69,7 +69,7 @@ Add `-t upload --upload-port <your-port>` to upload an environment, then:
 pio device monitor --port <your-port> --baud 115200
 ```
 
-`xiao_esp32s3` reads the IMU; it uses USB only without private network settings.
+`xiao_esp32s3` reads the IMU. It uses USB only without private network settings.
 `xiao_led_test` holds D1 HIGH. `xiao_camera_test` automatically captures five
 RAM-only frames at startup, stops the camera, and reports the result repeatedly.
 Only run the camera environment in the approved private testing setting.
@@ -87,7 +87,7 @@ docker compose ps
 
 Grafana: http://localhost:3000/d/group18-vertical-slice
 InfluxDB: http://localhost:8086
-Username: `admin`; generated passwords are in the ignored local `.env` file.
+Username: `admin`. Generated passwords are in the ignored local `.env` file.
 Grafana/InfluxDB bind to localhost. MQTT defaults to localhost until deliberately
 bound to a specific private interface. Our server verification checks this path using labeled synthetic test data.
 
@@ -119,10 +119,10 @@ a fixed desk or wall with no non-consenting people in frame.
 4. Serial output reports state, button level, frame count, and failures. No image
    bytes are printed. The microphone is never initialized, and SD/Wi-Fi are unused.
 
-The button is debounced for 40 ms; capture requests are spaced by at least
+The button is debounced for 40 ms. Capture requests are spaced by at least
 100 ms (not a guaranteed frame rate). Frame acquisition failure stops capture.
-If camera startup/shutdown fails, the LED remains on and restart is locked out;
-disconnect power and investigate. We verified compilation of this firmware with
+If camera startup/shutdown fails, the LED remains on and restart is locked out.
+Disconnect power and investigate. We verified compilation of this firmware with
 PlatformIO. The earlier standalone LED test was visually confirmed on the board.
 
 To build/upload:
@@ -132,14 +132,13 @@ pio run -d firmware-xiao -e xiao_button_capture -t upload --upload-port <your-po
 pio device monitor --port <your-port> --baud 115200
 ```
 
-Each acquired frame is released after counting; this variant captures into RAM.
+Each acquired frame is released after counting. This variant captures into RAM.
 
 ## USB clock synchronization for local TLS testing
 
 We added an optional USB clock command to the IMU firmware. This lets our laptop
 provide the current UTC time when testing MQTT on a hotspot. Certificate
-verification stays enabled. The command is accepted over physical USB serial;
-we do not accept clock commands over Wi-Fi or MQTT.
+verification stays enabled. The command is accepted only over physical USB serial.
 
 With the IMU firmware installed and other serial monitors closed:
 
@@ -158,3 +157,19 @@ to SDA D4 / SCL D5. Sensor data is published only after a successful hardware re
 
 The LAN certificate includes both an IP SAN for desktop clients and a numeric
 DNS SAN for the Arduino core's mbedTLS hostname verifier.
+
+## Longer camera indicator test
+
+Our camera bench test defaults to five frames. We can select 1–60 frames at
+build time using `CAMERA_TEST_FRAMES`. For example, twenty frames spaced about
+one second apart give us a longer interval to observe the external D1 LED:
+
+```sh
+PLATFORMIO_BUILD_FLAGS='-DCAMERA_TEST_FRAMES=20' pio run -d firmware-xiao -e xiao_camera_test -t upload --upload-port <your-port>
+```
+
+We received 20/20 frames at 320×240 and successful camera shutdown in this test.
+We visually confirmed that the external red LED lit during capture.
+Frames are discarded from RAM. The microphone stays uninitialized. The LED is
+commanded on before camera startup and off after successful shutdown. This
+firmware runs the finite test again after a board restart.
