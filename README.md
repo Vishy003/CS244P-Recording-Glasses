@@ -116,8 +116,8 @@ a fixed desk or wall with no non-consenting people in frame.
    turns on before camera initialization. JPEG frames are acquired into RAM and
    returned to the camera driver after each capture.
 3. Press again to stop. The camera shuts down before the LED goes off.
-4. Serial output reports state, button level, frame count, and failures. No image
-   bytes are printed. The microphone is never initialized, and SD/Wi-Fi are unused.
+4. Serial output reports state, button level, frame count, and failures. The first
+   JPEG frame is exported as a USB preview. The microphone is never initialized, and SD/Wi-Fi are unused.
 
 The button is debounced for 40 ms. Capture requests are spaced by at least
 100 ms (not a guaranteed frame rate). Frame acquisition failure stops capture.
@@ -173,3 +173,17 @@ We visually confirmed that the external red LED lit during capture.
 Frames are discarded from RAM. The microphone stays uninitialized. The LED is
 commanded on before camera startup and off after successful shutdown. This
 firmware runs the finite test again after a board restart.
+
+## Button capture with a USB image preview
+
+We verified a physical button start and stop cycle on November 23. The red LED
+was visually confirmed on during capture and off after stopping. The session
+acquired 299 frames with zero acquisition failures. We received and opened a
+320×240 JPEG preview in VS Code. The camera was idle after the final stop.
+
+The button firmware exports the first frame of each session over USB. Run
+`python scripts/show_button_capture.py --port <your-port>` using a Python
+environment with pyserial installed. The monitor validates the JPEG length and
+markers, then saves it under the ignored `.local/captures/` directory.
+The microphone remains uninitialized. This captures frames and a local preview
+image rather than a saved video file.
