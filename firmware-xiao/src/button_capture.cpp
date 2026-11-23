@@ -3,9 +3,10 @@
 
 // Button: D2 -> normally-open switch -> GND. Internal pull-up, active LOW.
 // Indicator: D1 -> 330 ohm resistor -> LED anode; cathode -> GND.
-// Private-room RAM-only capture: no microphone, SD, network, or saved video.
+// Private-room RAM capture with one USB JPEG preview per session. No microphone, SD, network, or saved video.
 constexpr uint32_t DEBOUNCE_MS = 40;
 constexpr uint32_t FRAME_INTERVAL_MS = 100;
+bool previewSent = false;
 bool capturing = false;
 bool fault = false;
 bool armed = false;
@@ -23,7 +24,7 @@ void stopCapture() {
   capturing = false;
   if (result == ESP_OK) {
     digitalWrite(D1, LOW);
-    Serial.printf("STOPPED: camera off, LED off; %lu frames captured and discarded, %lu failed. No video saved.\n",
+    Serial.printf("STOPPED: camera off, LED off; %lu frames acquired, %lu failed. One preview offered over USB. No video saved.\n",
                   (unsigned long)frames, (unsigned long)failedFrames);
   } else {
     fault = true;
@@ -58,9 +59,10 @@ void startCapture() {
     return;
   }
   frames = failedFrames = 0;
+  previewSent = false;
   lastFrameAt = lastReportAt = millis();
   capturing = true;
-  Serial.println("CAPTURING: LED on; frames in RAM only, discarded after use. Press again to stop. Microphone off.");
+  Serial.println("CAPTURING: LED on; frames in RAM, first frame exported as USB preview. Press again to stop. Microphone off.");
 }
 
 void setup() {
@@ -98,7 +100,23 @@ void loop() {
     camera_fb_t* frame = esp_camera_fb_get();
     if (frame) {
       ++frames;
-      // Future storage hook: write frame bytes and close/flush files before LED off.
+      // Export one preview per button-started session over USB.
+      if (!previewSent) {
+        Serial.printf("PREVIEW_JPEG_BEGIN %u\n", unsigned(frame->len));
+        const char hex[] = "0123456789abcdef";
+        char line[129];
+        for (size_t offset = 0; offset < frame->len; offset += 64) {
+          size_t n = min(size_t(64), frame->len - offset);
+          for (size_t j = 0; j < n; ++j) {
+            line[2*j] = hex[frame->buf[offset+j] >> 4];
+            line[2*j+1] = hex[frame->buf[offset+j] & 15];
+          }
+          line[2*n] = 0;
+          Serial.println(line);
+        }
+        Serial.println("PREVIEW_JPEG_END");
+        previewSent = true;
+      }
       esp_camera_fb_return(frame);
     } else {
       ++failedFrames;
